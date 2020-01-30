@@ -1,0 +1,4 @@
+#ifndef QGRAPHICWIDGET_H
+#define QGRAPHICWIDGET_H
+
+#endif // QGRAPHICWIDGET_H
