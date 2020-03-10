@@ -14,7 +14,7 @@ struct ChannelParams {
 
     ChannelParams() {
         index = 0;
-        scalingFactor = 20.0;
+        scalingFactor = 0.0;
     }
 };
 
@@ -28,6 +28,8 @@ public:
     void setEDFHeader(edf_hdr_struct * pEDFHeader);
     // передача массива отсчетов для каждого из каналов
     void setData(quint32 channelIndex, QByteArray doubleSamples);
+    //
+    void setScalingFactor(qreal scalingFactor);
 
 protected:
     // метод для отрисовки содержимого виджета
@@ -45,6 +47,9 @@ private:
     edf_hdr_struct * mpEDFHeader;
     // параметры и данные каналов
     QVector<ChannelParams> mChannels;
+    // масштабирующий коэффициент по умолчанию
+    qreal mScalingFactor;
+
 };
 
 #endif // GRAPHICAREAWIDGET_H

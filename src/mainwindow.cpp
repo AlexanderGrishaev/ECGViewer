@@ -153,3 +153,8 @@ void MainWindow::on_actionLoad_triggered() {
     }
     edfclose_file(mEDFHeader.handle);
 }
+
+void MainWindow::on_comboBox_currentIndexChanged(const QString &scaleText)
+{
+    mpGraphicAreaWidget->setScalingFactor(scaleText.toDouble());
+}

@@ -2,6 +2,7 @@
 #include <QPainter>
 
 GraphicAreaWidget::GraphicAreaWidget(QWidget *parent) : QWidget(parent) {
+    mScalingFactor = 20.0;
     mpEDFHeader = nullptr;
     setMouseTracking(true);
 }
@@ -9,6 +10,11 @@ GraphicAreaWidget::GraphicAreaWidget(QWidget *parent) : QWidget(parent) {
 void GraphicAreaWidget::setEDFHeader(edf_hdr_struct *pEDFHeader) {
     mpEDFHeader = pEDFHeader;
     mChannels.resize(mpEDFHeader->edfsignals);
+    for (int i = 0; i < mChannels.size(); i++) {
+        if (mChannels[i].scalingFactor == 0) {
+            mChannels[i].scalingFactor = mScalingFactor;
+        }
+    }
     repaint();
 }
 
@@ -18,6 +24,15 @@ void GraphicAreaWidget::setData(quint32 channelIndex, QByteArray doubleSamples)
         mChannels[channelIndex].index = channelIndex;
         mChannels[channelIndex].samples = doubleSamples;
     }
+}
+
+void GraphicAreaWidget::setScalingFactor(qreal scalingFactor)
+{
+    mScalingFactor = scalingFactor;
+    for (int i = 0; i < mChannels.size(); i++) {
+        mChannels[i].scalingFactor = mScalingFactor;
+    }
+    repaint();
 }
 
 void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
