@@ -50,10 +50,10 @@
         <item>
          <widget class="QComboBox" name="comboBox">
           <property name="currentText">
-           <string>20</string>
+           <string>100</string>
           </property>
           <property name="currentIndex">
-           <number>5</number>
+           <number>8</number>
           </property>
           <item>
            <property name="text">

@@ -2,7 +2,7 @@
 #include <QPainter>
 
 GraphicAreaWidget::GraphicAreaWidget(QWidget *parent) : QWidget(parent) {
-    mScalingFactor = 20.0;
+    mScalingFactor = 100.0;
     mpEDFHeader = nullptr;
     setMouseTracking(true);
 }
@@ -46,6 +46,8 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
         return;
     }
 
+    qreal magicScaler = 5.0;
+
     painter.setPen(Qt::black);
 
     quint32 screenHeight = height();
@@ -57,20 +59,63 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
         quint32 startY = channelHeight / 2 + channelHeight * channel;
         if (channel < mChannels.size() && mChannels[channel].samples.size() > 0)
         {
-            quint32 samplesCount = mChannels[channel].samples.size() / sizeof(double);
+            qreal scale = magicScaler * qreal(mpEDFHeader->signalparam[channel].dig_max - mpEDFHeader->signalparam[channel].dig_min) /
+                    ((mpEDFHeader->signalparam[channel].phys_max - mpEDFHeader->signalparam[channel].phys_min) * mChannels[channel].scalingFactor);
+
             double * pData = (double *) mChannels[channel].samples.data();
+            quint32 samplesCount = mChannels[channel].samples.size() / sizeof(double);
+            QPoint * points = nullptr;
 
-            QPoint * points = new QPoint[samplesCount];
+            if (samplesCount > screenWidth) {
+                QPoint * points = new QPoint[screenWidth*2];
+                quint32 pointCount = 0;
+                quint32 xPrev = 0;
+                qint32 yMax = 0;
+                qint32 yMin = screenHeight;
+                for (quint32 sampleIndex = 0; sampleIndex < samplesCount; sampleIndex++)
+                {
+                    qint32 x = screenWidth * sampleIndex / samplesCount;
+                    qint32 y = startY + pData[sampleIndex] * scale;
+                    if (y < 0) y = 0;
+                    if (y > screenHeight - 1) y = screenHeight - 1;
 
-            for (quint32 sampleIndex = 0; sampleIndex < samplesCount; sampleIndex++)
-            {
-                quint32 x = screenWidth * sampleIndex / samplesCount;
-                quint32 y = startY - pData[sampleIndex] * mChannels[channel].scalingFactor;
-                points[sampleIndex].setX(x);
-                points[sampleIndex].setY(y);
+                    if (yMin > y) yMin = y;
+                    if (yMax < y) yMax = y;
+
+                    if (x != xPrev) {
+                        if (yMin == yMax) {
+                            points[pointCount].setX(x);
+                            points[pointCount].setY(yMin);
+                            pointCount++;
+                        } else {
+                            points[pointCount].setX(x);
+                            points[pointCount].setY(yMin);
+                            pointCount++;
+
+                            points[pointCount].setX(x);
+                            points[pointCount].setY(yMax);
+                            pointCount++;
+                        }
+                        xPrev = x;
+                        yMax = 0;
+                        yMin = screenHeight;
+                    }
+                }
+                painter.drawPolyline(points, pointCount);
+            } else {
+                QPoint * points = new QPoint[samplesCount];
+
+                for (quint32 sampleIndex = 0; sampleIndex < samplesCount; sampleIndex++)
+                {
+                    qint32 x = screenWidth * sampleIndex / samplesCount;
+                    qint32 y = startY + pData[sampleIndex] * scale;
+                    if (y < 0) y = 0;
+                    if (y > screenHeight - 1) y = screenHeight - 1;
+                    points[sampleIndex].setX(x);
+                    points[sampleIndex].setY(y);
+                }
+                painter.drawPolyline(points, samplesCount);
             }
-
-            painter.drawPolyline(points, samplesCount);
             delete points;
         }
     }

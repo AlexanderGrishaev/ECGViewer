@@ -30,3 +30,13 @@ bin32/Makefile.Debug
 bin32/Makefile.Release
 
 bin32/ui_mainwindow.h
+
+bin/debug/moc_graphicareawidget.cpp
+
+bin/debug/moc_mainwindow.cpp
+
+bin/debug/moc_predefs.h
+
+bin/debug/
+
+bin32/debug/
