@@ -22,7 +22,11 @@ private slots:
 
     void on_actionLoad_triggered();
 
-    void on_comboBox_currentIndexChanged(const QString &arg1);
+    void on_comboBox_currentIndexChanged(const QString &scaleFactorText);
+
+    void on_comboBox_2_currentIndexChanged(const QString &sweepFactorText);
+
+    void on_horizontalScrollBar_valueChanged(int value);
 
 private:
     Ui::MainWindow *ui;

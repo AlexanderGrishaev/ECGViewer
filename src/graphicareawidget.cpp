@@ -3,8 +3,12 @@
 
 GraphicAreaWidget::GraphicAreaWidget(QWidget *parent) : QWidget(parent) {
     mScalingFactor = 100.0;
+    mSweepFactor = 30.0;
+    mScroll = 0.0;
     mpEDFHeader = nullptr;
     setMouseTracking(true);
+    mRepaint = false;
+    startTimer(50);
 }
 
 void GraphicAreaWidget::setEDFHeader(edf_hdr_struct *pEDFHeader) {
@@ -15,10 +19,10 @@ void GraphicAreaWidget::setEDFHeader(edf_hdr_struct *pEDFHeader) {
             mChannels[i].scalingFactor = mScalingFactor;
         }
     }
-    repaint();
+    mRepaint = true;
 }
 
-void GraphicAreaWidget::setData(quint32 channelIndex, QByteArray doubleSamples)
+void GraphicAreaWidget::setData(qint32 channelIndex, QByteArray doubleSamples)
 {
     if (channelIndex < mChannels.size()) {
         mChannels[channelIndex].index = channelIndex;
@@ -32,7 +36,19 @@ void GraphicAreaWidget::setScalingFactor(qreal scalingFactor)
     for (int i = 0; i < mChannels.size(); i++) {
         mChannels[i].scalingFactor = mScalingFactor;
     }
-    repaint();
+    mRepaint = true;
+}
+
+void GraphicAreaWidget::setSweepFactor(qreal sweepFactor)
+{
+    mSweepFactor = sweepFactor;
+    mRepaint = true;
+}
+
+void GraphicAreaWidget::setScroll(qreal part)
+{
+    mScroll = part;
+    mRepaint = true;
 }
 
 void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
@@ -46,35 +62,56 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
         return;
     }
 
-    qreal magicScaler = 5.0;
+    qreal magicPowerScaler = 5.0;
+    qreal magicTimeScaler = 60.0;
 
     painter.setPen(Qt::black);
 
-    quint32 screenHeight = height();
-    quint32 screenWidth = width();
-    quint32 channelHeight = screenHeight / mpEDFHeader->edfsignals;
+    qint32 screenHeight = height();
+    qint32 screenWidth = width();
+    qint32 channelHeight = screenHeight / mpEDFHeader->edfsignals;
 
-    for (quint32 channel = 0; channel < quint32(mpEDFHeader->edfsignals); channel++)
+    for (qint32 channel = 0; channel < qint32(mpEDFHeader->edfsignals); channel++)
     {
-        quint32 startY = channelHeight / 2 + channelHeight * channel;
+        qint32 startY = channelHeight / 2 + channelHeight * channel;
         if (channel < mChannels.size() && mChannels[channel].samples.size() > 0)
         {
-            qreal scale = magicScaler * qreal(mpEDFHeader->signalparam[channel].dig_max - mpEDFHeader->signalparam[channel].dig_min) /
+            qreal scale = magicPowerScaler * qreal(mpEDFHeader->signalparam[channel].dig_max - mpEDFHeader->signalparam[channel].dig_min) /
                     ((mpEDFHeader->signalparam[channel].phys_max - mpEDFHeader->signalparam[channel].phys_min) * mChannels[channel].scalingFactor);
 
             double * pData = (double *) mChannels[channel].samples.data();
-            quint32 samplesCount = mChannels[channel].samples.size() / sizeof(double);
+            qint32 samplesCountAll = mChannels[channel].samples.size() / sizeof(double);
+            qint32 samplesViewPort = qreal(screenWidth) * magicTimeScaler / mSweepFactor;
+
+            if (samplesViewPort < 1) {
+                samplesViewPort = 1;
+            }
+
+            qint32 startSampleIndex = qint32(mScroll * qreal(samplesCountAll));
+            if (startSampleIndex >= samplesCountAll - 1) {
+                startSampleIndex = samplesCountAll - 2;
+            }
+
+            qint32 endSampleIndex = startSampleIndex + samplesViewPort;
+
+            if (endSampleIndex >= samplesCountAll) {
+                endSampleIndex = samplesCountAll - 1;
+            }
+
             QPoint * points = nullptr;
 
-            if (samplesCount > screenWidth) {
+            if (samplesViewPort > screenWidth) {
                 QPoint * points = new QPoint[screenWidth*2];
-                quint32 pointCount = 0;
-                quint32 xPrev = 0;
+                qint32 pointCount = 0;
+                qint32 xPrev = 0;
                 qint32 yMax = 0;
                 qint32 yMin = screenHeight;
-                for (quint32 sampleIndex = 0; sampleIndex < samplesCount; sampleIndex++)
+                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++)
                 {
-                    qint32 x = screenWidth * sampleIndex / samplesCount;
+                    qint32 x = screenWidth * (sampleIndex - startSampleIndex) / samplesViewPort;
+                    if (x < 0) x = 0;
+                    if (x > screenWidth - 1) x = screenWidth - 1;
+
                     qint32 y = startY + pData[sampleIndex] * scale;
                     if (y < 0) y = 0;
                     if (y > screenHeight - 1) y = screenHeight - 1;
@@ -103,24 +140,34 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                 }
                 painter.drawPolyline(points, pointCount);
             } else {
-                QPoint * points = new QPoint[samplesCount];
+                QPoint * points = new QPoint[endSampleIndex - startSampleIndex];
 
-                for (quint32 sampleIndex = 0; sampleIndex < samplesCount; sampleIndex++)
+                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++)
                 {
-                    qint32 x = screenWidth * sampleIndex / samplesCount;
-                    qint32 y = startY + pData[sampleIndex] * scale;
+                    qint32 x = (qint32)((qreal)screenWidth * (qreal)(sampleIndex - startSampleIndex) / (qreal)samplesViewPort);
+                    if (x < 0) x = 0;
+                    if (x > screenWidth - 1) x = screenWidth - 1;
+
+                    qint32 y = startY + (qint32)(pData[sampleIndex] * scale);
                     if (y < 0) y = 0;
                     if (y > screenHeight - 1) y = screenHeight - 1;
-                    points[sampleIndex].setX(x);
-                    points[sampleIndex].setY(y);
+                    points[sampleIndex - startSampleIndex].setX(x);
+                    points[sampleIndex - startSampleIndex].setY(y);
                 }
-                painter.drawPolyline(points, samplesCount);
+                painter.drawPolyline(points, endSampleIndex - startSampleIndex);
             }
-            delete points;
+            delete[] points;
         }
     }
 }
 
 void GraphicAreaWidget::mouseMoveEvent(QMouseEvent *pEvent) {
-    repaint();
+    mRepaint = true;
+}
+
+void GraphicAreaWidget::timerEvent(QTimerEvent *event)
+{
+    if (mRepaint) {
+        repaint();
+    }
 }

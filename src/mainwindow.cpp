@@ -139,6 +139,8 @@ void MainWindow::on_actionLoad_triggered() {
         // чтение из файла
         int count = edfread_physical_samples(mEDFHeader.handle, channel, int(samplesCount), pDoubleBuffer);
 
+        printf("\nSamples = %d\n", count);
+
         if ( count == (-1))
         {
           printf("\nerror: edf_read_physical_samples()\n");
@@ -147,7 +149,7 @@ void MainWindow::on_actionLoad_triggered() {
           return;
         }
 
-        mpGraphicAreaWidget->setData(quint32(channel), QByteArray((char*) pDoubleBuffer, int(samplesCount) * sizeof(double)));
+        mpGraphicAreaWidget->setData(channel, QByteArray((char*) pDoubleBuffer, int(samplesCount) * sizeof(double)));
 
         free(pDoubleBuffer);
     }
@@ -157,4 +159,14 @@ void MainWindow::on_actionLoad_triggered() {
 void MainWindow::on_comboBox_currentIndexChanged(const QString &scaleText)
 {
     mpGraphicAreaWidget->setScalingFactor(scaleText.toDouble());
+}
+
+void MainWindow::on_comboBox_2_currentIndexChanged(const QString &sweepText)
+{
+    mpGraphicAreaWidget->setSweepFactor(sweepText.toDouble());
+}
+
+void MainWindow::on_horizontalScrollBar_valueChanged(int value)
+{
+    mpGraphicAreaWidget->setScroll(qreal(value)/100.0);
 }

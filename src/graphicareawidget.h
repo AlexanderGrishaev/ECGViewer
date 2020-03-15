@@ -27,15 +27,21 @@ public:
     // передача заголовка файла с параметрами записей
     void setEDFHeader(edf_hdr_struct * pEDFHeader);
     // передача массива отсчетов для каждого из каналов
-    void setData(quint32 channelIndex, QByteArray doubleSamples);
+    void setData(qint32 channelIndex, QByteArray doubleSamples);
     //
     void setScalingFactor(qreal scalingFactor);
+    //
+    void setSweepFactor(qreal sweepFactor);
+    //
+    void setScroll(qreal part);
 
 protected:
     // метод для отрисовки содержимого виджета
     void paintEvent(QPaintEvent *event);
     // реакция на движение мыши и нажатия клавиш мыши
     void mouseMoveEvent(QMouseEvent * pEvent);
+    //
+    void timerEvent(QTimerEvent *event) override;
 
 signals:
 
@@ -49,6 +55,12 @@ private:
     QVector<ChannelParams> mChannels;
     // масштабирующий коэффициент по умолчанию
     qreal mScalingFactor;
+    // разрешение по времени
+    qreal mSweepFactor;
+    // прокрутка по времени (0..1)
+    qreal mScroll;
+    //
+    bool mRepaint;
 
 };
 
