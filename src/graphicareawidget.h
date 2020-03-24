@@ -11,10 +11,16 @@ struct ChannelParams {
     QByteArray samples;
     // масштабирующий коэффициент
     qreal scalingFactor;
+    // минимальное значение
+    qreal minValue;
+    // максимальное значение
+    qreal maxValue;
 
     ChannelParams() {
         index = 0;
         scalingFactor = 0.0;
+        minValue = 0;
+        maxValue = 0;
     }
 };
 

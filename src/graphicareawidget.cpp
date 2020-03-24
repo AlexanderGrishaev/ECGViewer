@@ -27,6 +27,16 @@ void GraphicAreaWidget::setData(qint32 channelIndex, QByteArray doubleSamples)
     if (channelIndex < mChannels.size()) {
         mChannels[channelIndex].index = channelIndex;
         mChannels[channelIndex].samples = doubleSamples;
+        double * pData = (double *) mChannels[channelIndex].samples.data();
+        qint32 samplesCountAll = mChannels[channelIndex].samples.size() / sizeof(double);
+        for (int i = 0; i < samplesCountAll; i++, pData++) {
+            if (i == 0 || mChannels[channelIndex].minValue > *pData) {
+                mChannels[channelIndex].minValue = *pData;
+            }
+            if (i == 0 || mChannels[channelIndex].maxValue < *pData) {
+                mChannels[channelIndex].maxValue = *pData;
+            }
+        }
     }
 }
 
@@ -82,6 +92,7 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
             double * pData = (double *) mChannels[channel].samples.data();
             qint32 samplesCountAll = mChannels[channel].samples.size() / sizeof(double);
             qint32 samplesViewPort = qreal(screenWidth) * magicTimeScaler / mSweepFactor;
+            qreal meanValue = (mChannels[channel].maxValue + mChannels[channel].minValue) * 0.5;
 
             if (samplesViewPort < 1) {
                 samplesViewPort = 1;
@@ -106,13 +117,14 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                 qint32 xPrev = 0;
                 qint32 yMax = 0;
                 qint32 yMin = screenHeight;
-                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++)
+                double * pCurrentData = pData + startSampleIndex;
+                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++, pCurrentData++)
                 {
                     qint32 x = screenWidth * (sampleIndex - startSampleIndex) / samplesViewPort;
                     if (x < 0) x = 0;
                     if (x > screenWidth - 1) x = screenWidth - 1;
 
-                    qint32 y = startY + pData[sampleIndex] * scale;
+                    qint32 y = startY + (*pCurrentData - meanValue) * scale;
                     if (y < 0) y = 0;
                     if (y > screenHeight - 1) y = screenHeight - 1;
 
@@ -148,7 +160,7 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                     if (x < 0) x = 0;
                     if (x > screenWidth - 1) x = screenWidth - 1;
 
-                    qint32 y = startY + (qint32)(pData[sampleIndex] * scale);
+                    qint32 y = startY + (qint32)((pData[sampleIndex] - meanValue) * scale);
                     if (y < 0) y = 0;
                     if (y > screenHeight - 1) y = screenHeight - 1;
                     points[sampleIndex - startSampleIndex].setX(x);
