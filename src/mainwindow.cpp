@@ -125,6 +125,9 @@ void MainWindow::on_actionLoad_triggered() {
         QLabel * pLabel = new QLabel(text.trimmed(), this);
         ui->verticalLayoutLeft->addWidget(pLabel);
 
+        ui->comboBox_ecg->addItem(text);
+        ui->comboBox_pl->addItem(text);
+
         unsigned long long samplesCount = mEDFHeader.signalparam[channel].smp_in_file;
 
         pDoubleBuffer = (double *)malloc(samplesCount * sizeof(double));
@@ -169,4 +172,9 @@ void MainWindow::on_comboBox_2_currentIndexChanged(const QString &sweepText)
 void MainWindow::on_horizontalScrollBar_valueChanged(int value)
 {
     mpGraphicAreaWidget->setScroll(qreal(value)/100.0);
+}
+
+void MainWindow::on_pushButton_clicked()
+{
+    mpGraphicAreaWidget->calc();
 }

@@ -2,12 +2,14 @@
 #include <QPainter>
 
 GraphicAreaWidget::GraphicAreaWidget(QWidget *parent) : QWidget(parent) {
-    mScalingFactor = 100.0;
+    mScalingFactor = 1000.0;
     mSweepFactor = 30.0;
     mScroll = 0.0;
     mpEDFHeader = nullptr;
     setMouseTracking(true);
     mRepaint = false;
+    mChannelECG = 1;
+    mChannelPlethism = 0;
     startTimer(50);
 }
 
@@ -37,6 +39,8 @@ void GraphicAreaWidget::setData(qint32 channelIndex, QByteArray doubleSamples)
                 mChannels[channelIndex].maxValue = *pData;
             }
         }
+        mChannels[channelIndex].heartRate.resize(sizeof(int) * samplesCountAll);
+        mChannels[channelIndex].heartRate.fill(0);
     }
 }
 
@@ -61,6 +65,18 @@ void GraphicAreaWidget::setScroll(qreal part)
     mRepaint = true;
 }
 
+void GraphicAreaWidget::calc()
+{
+    for (int i = 0; i < mpEDFHeader->edfsignals; i++) {
+        findHeartRate((double *)mChannels[i].samples.data(),
+                  (int *)mChannels[i].heartRate.data(),
+                  mChannels[i].samples.size() / sizeof(double),
+                  getSampleRate(i));
+    }
+
+    mRepaint = true;
+}
+
 void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
     QPainter painter(this);
 
@@ -81,8 +97,19 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
     qint32 screenWidth = width();
     qint32 channelHeight = screenHeight / mpEDFHeader->edfsignals;
 
+    QBrush brush(Qt::red, Qt::SolidPattern);
+    painter.setBrush(brush);
+
     for (qint32 channel = 0; channel < qint32(mpEDFHeader->edfsignals); channel++)
     {
+        if (channel == mChannelECG) {
+            painter.setPen(Qt::darkRed);
+        } else if (channel == mChannelPlethism) {
+            painter.setPen(Qt::darkGreen);
+        } else {
+            painter.setPen(Qt::black);
+        }
+
         qint32 startY = channelHeight / 2 + channelHeight * channel;
         if (channel < mChannels.size() && mChannels[channel].samples.size() > 0)
         {
@@ -90,6 +117,7 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                     ((mpEDFHeader->signalparam[channel].phys_max - mpEDFHeader->signalparam[channel].phys_min) * mChannels[channel].scalingFactor);
 
             double * pData = (double *) mChannels[channel].samples.data();
+            int * pPeaks = (int *) mChannels[channel].heartRate.data();
             qint32 samplesCountAll = mChannels[channel].samples.size() / sizeof(double);
             qint32 samplesViewPort = qreal(screenWidth) * magicTimeScaler / mSweepFactor;
             qreal meanValue = (mChannels[channel].maxValue + mChannels[channel].minValue) * 0.5;
@@ -118,7 +146,8 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                 qint32 yMax = 0;
                 qint32 yMin = screenHeight;
                 double * pCurrentData = pData + startSampleIndex;
-                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++, pCurrentData++)
+                int * pPeak = pPeaks + startSampleIndex;
+                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++, pCurrentData++, pPeak++)
                 {
                     qint32 x = screenWidth * (sampleIndex - startSampleIndex) / samplesViewPort;
                     if (x < 0) x = 0;
@@ -149,12 +178,18 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                         yMax = 0;
                         yMin = screenHeight;
                     }
+                    //
+                    if (*pPeak > 0) {
+                        //
+                        painter.drawEllipse(x, startY, 4, 4);
+                        painter.drawText(x, startY, QString::number(*pPeak));
+                    }
                 }
                 painter.drawPolyline(points, pointCount);
             } else {
                 QPoint * points = new QPoint[endSampleIndex - startSampleIndex];
-
-                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++)
+                int * pPeak = pPeaks + startSampleIndex;
+                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++, pPeak++)
                 {
                     qint32 x = (qint32)((qreal)screenWidth * (qreal)(sampleIndex - startSampleIndex) / (qreal)samplesViewPort);
                     if (x < 0) x = 0;
@@ -165,6 +200,12 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                     if (y > screenHeight - 1) y = screenHeight - 1;
                     points[sampleIndex - startSampleIndex].setX(x);
                     points[sampleIndex - startSampleIndex].setY(y);
+                    //
+                    if (*pPeak > 0) {
+                        //
+                        painter.drawEllipse(x, startY, 4, 4);
+                        painter.drawText(x, startY, QString::number(*pPeak));
+                    }
                 }
                 painter.drawPolyline(points, endSampleIndex - startSampleIndex);
             }
@@ -182,4 +223,93 @@ void GraphicAreaWidget::timerEvent(QTimerEvent *event)
     if (mRepaint) {
         repaint();
     }
+}
+
+void GraphicAreaWidget::findHeartRate(double *pInSamples, int *pHeartRate, int samplesCount, double sampleRate)
+{
+    int maxInterval = int(sampleRate / (MIN_HEART_RATE / 60.));
+    printf("Finding peaks: start\n");
+    memset(pHeartRate, 0, sizeof(int) * samplesCount);
+    int windowSize = maxInterval;
+    double * pSamples = new double[samplesCount];
+    double * pWindow = new double[windowSize];
+    double * pInData = pInSamples;
+    double * pNormData = pSamples;
+    memset(pWindow, 0, sizeof(int) * windowSize);
+    int aboveMean = 0;
+    // нормализация данных, приведение максимумов и минимумов
+    for (int i = 0; i < samplesCount; i++, pInData++, pNormData++) {
+        if (i < samplesCount - windowSize) {
+            memcpy(pWindow, pInData, sizeof(double) * windowSize);
+        }
+        double minValue = 0.;
+        double maxValue = 0.;
+        for (int j = 0; j < windowSize; j++) {
+            if (j == 0 || minValue > *(pWindow + j)) minValue = *(pWindow + j);
+            if (j == 0 || maxValue < *(pWindow + j)) maxValue = *(pWindow + j);
+        }
+        if (maxValue == minValue) {
+            *pNormData = 0;
+        } else {
+            *pNormData = (*pInData - minValue) / (maxValue - minValue);
+        }
+        if (*pNormData > 0.5) aboveMean++;
+    }
+    // проверки инверсии данных
+    if (aboveMean > samplesCount / 2) {
+        pNormData = pSamples;
+        for (int i = 0; i < samplesCount; i++, pNormData++) {
+            *pNormData = 1.0 - *pNormData;
+        }
+    }
+    // поиск максимумов
+    double barrier = 0.6;
+    int peakStartedIndex = 0;
+    int maxIndex = 0;
+    int prevMaxIndex = -1;
+    double maxValue = 0.0;
+    pNormData = pSamples;
+    for (int i = 0; i < samplesCount; i++, pNormData++) {
+        if (*pNormData > barrier) {
+            *(pHeartRate + i) = 1;
+            // пик начался?
+            if (i > 0 && *(pHeartRate + i - 1) == 0) {
+                peakStartedIndex = i;
+                maxIndex = 0;
+                maxValue = 0.0;
+            }
+            if (maxValue < *pNormData) {
+                maxIndex = i;
+                maxValue = *pNormData;
+            }
+        } else {
+            // пик закончился?
+            if (i > 0 && *(pHeartRate + i - 1) != 0) {
+                *(pHeartRate + i) = 0;
+                if (peakStartedIndex < i - 1) {
+                    // уточняем положение максимума
+                    for (int j = peakStartedIndex; j < i; j++) {
+                        *(pHeartRate + j) = 0;
+                    }
+                    // ненулевое значение ЧСС для максимального значения пика
+                    if (prevMaxIndex != -1) {
+                        // ЧСС
+                        *(pHeartRate + maxIndex) = int(sampleRate * 60.0 / double(maxIndex - prevMaxIndex));
+                    }
+                    prevMaxIndex = maxIndex;
+
+                    printf("Maximum index = %d, HR = %d\n", maxIndex, *(pHeartRate + maxIndex));
+                }
+            }
+        }
+    }
+    delete[] pSamples;
+    delete[] pWindow;
+    printf("Finding peaks: end\n");
+}
+
+double GraphicAreaWidget::getSampleRate(int channel)
+{
+    return ((double)mpEDFHeader->signalparam[channel].smp_in_datarecord /
+            (double)mpEDFHeader->datarecord_duration) * EDFLIB_TIME_DIMENSION;
 }

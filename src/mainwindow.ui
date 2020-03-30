@@ -50,10 +50,10 @@
         <item>
          <widget class="QComboBox" name="comboBox">
           <property name="currentText">
-           <string>100</string>
+           <string>1000</string>
           </property>
           <property name="currentIndex">
-           <number>8</number>
+           <number>11</number>
           </property>
           <item>
            <property name="text">
@@ -197,6 +197,33 @@
          </widget>
         </item>
         <item>
+         <widget class="QLabel" name="label_3">
+          <property name="text">
+           <string>ECG channel</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="comboBox_ecg"/>
+        </item>
+        <item>
+         <widget class="QLabel" name="label_4">
+          <property name="text">
+           <string>Plethism channel</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="comboBox_pl"/>
+        </item>
+        <item>
+         <widget class="QPushButton" name="pushButton">
+          <property name="text">
+           <string>Heart rate</string>
+          </property>
+         </widget>
+        </item>
+        <item>
          <spacer name="horizontalSpacer">
           <property name="orientation">
            <enum>Qt::Horizontal</enum>
@@ -251,7 +278,7 @@
      <x>0</x>
      <y>0</y>
      <width>899</width>
-     <height>22</height>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuTest">
@@ -267,6 +294,9 @@
   <action name="actionLoad">
    <property name="text">
     <string>Load</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+O</string>
    </property>
   </action>
   <action name="actionExit">
