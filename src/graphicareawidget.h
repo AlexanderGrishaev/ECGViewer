@@ -78,7 +78,11 @@ private:
     // pInSamples входной массив отсчетов
     // pHeartRate выходной массив пиков, ненулевое значение это измеренная ЧСС
     // maxInterval максимальная дистанция между пиками
-    void findHeartRate(double * pInSamples, int * pHeartRate, int samplesCount, double sampleRate);
+    // inversion Инвертирование входных данных:
+    // -1 инвертирование
+    // 0 автоматический подбор (хорошо работает для картиограммы с ярковыраженными пиками))
+    // 1 без инвертирования
+    void findHeartRate(double * pInSamples, int * pHeartRate, int samplesCount, double sampleRate, int inversion);
     // индекс канала кардиограммы
     int mChannelECG;
     // индекс канала плетизмограммы

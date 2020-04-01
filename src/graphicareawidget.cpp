@@ -71,7 +71,8 @@ void GraphicAreaWidget::calc()
         findHeartRate((double *)mChannels[i].samples.data(),
                   (int *)mChannels[i].heartRate.data(),
                   mChannels[i].samples.size() / sizeof(double),
-                  getSampleRate(i));
+                  getSampleRate(i),
+                  i == 0 ? -1 : 0); // допускаем, что плетизмограмма в первом канале
     }
 
     mRepaint = true;
@@ -89,7 +90,7 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
     }
 
     qreal magicPowerScaler = 5.0;
-    qreal magicTimeScaler = 60.0;
+    qreal magicTimeScaler = 0.25;
 
     painter.setPen(Qt::black);
 
@@ -119,7 +120,7 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
             double * pData = (double *) mChannels[channel].samples.data();
             int * pPeaks = (int *) mChannels[channel].heartRate.data();
             qint32 samplesCountAll = mChannels[channel].samples.size() / sizeof(double);
-            qint32 samplesViewPort = qreal(screenWidth) * magicTimeScaler / mSweepFactor;
+            qint32 samplesViewPort = qreal(screenWidth) * getSampleRate(channel) * magicTimeScaler / mSweepFactor;
             qreal meanValue = (mChannels[channel].maxValue + mChannels[channel].minValue) * 0.5;
 
             if (samplesViewPort < 1) {
@@ -225,7 +226,7 @@ void GraphicAreaWidget::timerEvent(QTimerEvent *event)
     }
 }
 
-void GraphicAreaWidget::findHeartRate(double *pInSamples, int *pHeartRate, int samplesCount, double sampleRate)
+void GraphicAreaWidget::findHeartRate(double *pInSamples, int *pHeartRate, int samplesCount, double sampleRate, int inversion)
 {
     int maxInterval = int(sampleRate / (MIN_HEART_RATE / 60.));
     printf("Finding peaks: start\n");
@@ -256,7 +257,7 @@ void GraphicAreaWidget::findHeartRate(double *pInSamples, int *pHeartRate, int s
         if (*pNormData > 0.5) aboveMean++;
     }
     // проверки инверсии данных
-    if (aboveMean > samplesCount / 2) {
+    if (inversion < 0 || (inversion == 0 && aboveMean > samplesCount / 2)) {
         pNormData = pSamples;
         for (int i = 0; i < samplesCount; i++, pNormData++) {
             *pNormData = 1.0 - *pNormData;
