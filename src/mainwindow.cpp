@@ -176,5 +176,5 @@ void MainWindow::on_horizontalScrollBar_valueChanged(int value)
 
 void MainWindow::on_pushButton_clicked()
 {
-    mpGraphicAreaWidget->calc();
+    mpGraphicAreaWidget->calc(ui->comboBox_ecg->currentIndex(), ui->comboBox_pl->currentIndex());
 }

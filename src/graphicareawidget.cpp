@@ -41,6 +41,9 @@ void GraphicAreaWidget::setData(qint32 channelIndex, QByteArray doubleSamples)
         }
         mChannels[channelIndex].heartRate.resize(sizeof(int) * samplesCountAll);
         mChannels[channelIndex].heartRate.fill(0);
+
+        mChannels[channelIndex].timeLag.resize(sizeof(double) * samplesCountAll);
+        mChannels[channelIndex].timeLag.fill(0);
     }
 }
 
@@ -65,15 +68,25 @@ void GraphicAreaWidget::setScroll(qreal part)
     mRepaint = true;
 }
 
-void GraphicAreaWidget::calc()
+void GraphicAreaWidget::calc(int channelECG, int channelP)
 {
     for (int i = 0; i < mpEDFHeader->edfsignals; i++) {
-        findHeartRate((double *)mChannels[i].samples.data(),
-                  (int *)mChannels[i].heartRate.data(),
-                  mChannels[i].samples.size() / sizeof(double),
-                  getSampleRate(i),
-                  i == 0 ? -1 : 0); // допускаем, что плетизмограмма в первом канале
+        if (i == channelP || i == channelECG) {
+            findHeartRate((double *)mChannels[i].samples.data(),
+                      (int *)mChannels[i].heartRate.data(),
+                      mChannels[i].samples.size() / sizeof(double),
+                      getSampleRate(i),
+                      i == channelP ? 1 : 0);
+        }
     }
+
+    findTimeLag((int *)mChannels[channelECG].heartRate.data(),
+                mChannels[channelECG].heartRate.size() / sizeof(int),
+                getSampleRate(channelECG),
+                (int *)mChannels[channelP].heartRate.data(),
+                (double *)mChannels[channelP].timeLag.data(),
+                mChannels[channelP].heartRate.size() / sizeof(int),
+                getSampleRate(channelP));
 
     mRepaint = true;
 }
@@ -119,6 +132,7 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
 
             double * pData = (double *) mChannels[channel].samples.data();
             int * pPeaks = (int *) mChannels[channel].heartRate.data();
+            double * pTimeLag = (double *) mChannels[channel].timeLag.data();
             qint32 samplesCountAll = mChannels[channel].samples.size() / sizeof(double);
             qint32 samplesViewPort = qreal(screenWidth) * getSampleRate(channel) * magicTimeScaler / mSweepFactor;
             qreal meanValue = (mChannels[channel].maxValue + mChannels[channel].minValue) * 0.5;
@@ -148,13 +162,14 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                 qint32 yMin = screenHeight;
                 double * pCurrentData = pData + startSampleIndex;
                 int * pPeak = pPeaks + startSampleIndex;
-                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++, pCurrentData++, pPeak++)
+                double * pLag = pTimeLag + startSampleIndex;
+                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++, pCurrentData++, pPeak++, pLag++)
                 {
                     qint32 x = screenWidth * (sampleIndex - startSampleIndex) / samplesViewPort;
                     if (x < 0) x = 0;
                     if (x > screenWidth - 1) x = screenWidth - 1;
 
-                    qint32 y = startY + (*pCurrentData - meanValue) * scale;
+                    qint32 y = startY - (*pCurrentData - meanValue) * scale;
                     if (y < 0) y = 0;
                     if (y > screenHeight - 1) y = screenHeight - 1;
 
@@ -181,22 +196,26 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                     }
                     //
                     if (*pPeak > 0) {
-                        //
+                        QString text = QString::number(*pPeak);
+                        if (*pLag > 0) {
+                            text = text + "/" + QString::number(int((*pLag)*1000.0)) + "ms";
+                        }
                         painter.drawEllipse(x, startY, 4, 4);
-                        painter.drawText(x, startY, QString::number(*pPeak));
+                        painter.drawText(x, startY, text);
                     }
                 }
                 painter.drawPolyline(points, pointCount);
             } else {
                 QPoint * points = new QPoint[endSampleIndex - startSampleIndex];
                 int * pPeak = pPeaks + startSampleIndex;
-                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++, pPeak++)
+                double * pLag = pTimeLag + startSampleIndex;
+                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++, pPeak++, pLag++)
                 {
                     qint32 x = (qint32)((qreal)screenWidth * (qreal)(sampleIndex - startSampleIndex) / (qreal)samplesViewPort);
                     if (x < 0) x = 0;
                     if (x > screenWidth - 1) x = screenWidth - 1;
 
-                    qint32 y = startY + (qint32)((pData[sampleIndex] - meanValue) * scale);
+                    qint32 y = startY - (qint32)((pData[sampleIndex] - meanValue) * scale);
                     if (y < 0) y = 0;
                     if (y > screenHeight - 1) y = screenHeight - 1;
                     points[sampleIndex - startSampleIndex].setX(x);
@@ -204,8 +223,12 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                     //
                     if (*pPeak > 0) {
                         //
+                        QString text = QString::number(*pPeak);
+                        if (*pLag > 0) {
+                            text = text + "/" + QString::number(int((*pLag)*1000.0)) + "ms";
+                        }
                         painter.drawEllipse(x, startY, 4, 4);
-                        painter.drawText(x, startY, QString::number(*pPeak));
+                        painter.drawText(x, startY, text);
                     }
                 }
                 painter.drawPolyline(points, endSampleIndex - startSampleIndex);
@@ -313,4 +336,27 @@ double GraphicAreaWidget::getSampleRate(int channel)
 {
     return ((double)mpEDFHeader->signalparam[channel].smp_in_datarecord /
             (double)mpEDFHeader->datarecord_duration) * EDFLIB_TIME_DIMENSION;
+}
+
+void GraphicAreaWidget::findTimeLag(int * pHeartRateECG, int samplesCountECG, double sampleRateECG, int * pHeartRateP, double * pTimeLag, int samplesCountP, double sampleRateP)
+{
+    int maxTimeLag =  60.0 / MIN_HEART_RATE;
+
+    memset(pTimeLag, 0, sizeof(double) * samplesCountP);
+
+    for (int indexECG = 0; indexECG < samplesCountECG; indexECG++) {
+        double timeECG = double(indexECG) / sampleRateECG;
+        if (*(pHeartRateECG + indexECG) > 0) {
+            int startIndexP = int(double(indexECG) * sampleRateP / sampleRateECG);
+            for (int indexP = startIndexP; indexP < samplesCountP; indexP++) {
+                double timeP = double(indexP) / sampleRateP;
+                if (timeP - timeECG > 0 && timeP - timeECG < maxTimeLag && *(pHeartRateP + indexP) > 0) {
+                    *(pTimeLag + indexP) = timeP - timeECG;
+                    printf("Time lag = %lf\n", timeP - timeECG);
+                    break;
+                }
+            }
+        }
+    }
+
 }

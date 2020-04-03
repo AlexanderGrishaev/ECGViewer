@@ -14,6 +14,9 @@ struct ChannelParams {
     QByteArray samples;
     // ЧСС (int)
     QByteArray heartRate;
+    // Отставание по времени (только в канале плетизмограммы), с (double)
+    QByteArray timeLag;
+
     // масштабирующий коэффициент
     qreal scalingFactor;
     // минимальное значение
@@ -46,7 +49,7 @@ public:
     //
     void setScroll(qreal part);
     //
-    void calc();
+    void calc(int channelECG, int channelP);
 
 protected:
     // метод для отрисовки содержимого виджета
@@ -89,6 +92,8 @@ private:
     int mChannelPlethism;
     //
     double getSampleRate(int channel);
+    //
+    void findTimeLag(int * pHeartRateECG, int samplesCountECG, double SampleRateECG, int * pHeartRateP, double * pTimeLag, int samplesCountP, double SampleRateP);
 
 
 };
