@@ -44,6 +44,12 @@ void GraphicAreaWidget::setData(qint32 channelIndex, QByteArray doubleSamples)
 
         mChannels[channelIndex].timeLag.resize(sizeof(double) * samplesCountAll);
         mChannels[channelIndex].timeLag.fill(0);
+
+        mChannels[channelIndex].minimums.resize(sizeof(double) * samplesCountAll);
+        mChannels[channelIndex].minimums.fill(0);
+
+        mChannels[channelIndex].maximums.resize(sizeof(double) * samplesCountAll);
+        mChannels[channelIndex].maximums.fill(0);
     }
 }
 
@@ -68,17 +74,51 @@ void GraphicAreaWidget::setScroll(qreal part)
     mRepaint = true;
 }
 
-void GraphicAreaWidget::calc(int channelECG, int channelP)
+void GraphicAreaWidget::calc(int channelECG, int channelP, int channelABP)
 {
-    for (int i = 0; i < mpEDFHeader->edfsignals; i++) {
-        if (i == channelP || i == channelECG) {
-            findHeartRate((double *)mChannels[i].samples.data(),
-                      (int *)mChannels[i].heartRate.data(),
-                      mChannels[i].samples.size() / sizeof(double),
-                      getSampleRate(i),
-                      i == channelP ? 1 : 0);
+    findHeartRate((double *)mChannels[channelECG].samples.data(),
+              (int *)mChannels[channelECG].heartRate.data(),
+              mChannels[channelECG].samples.size() / sizeof(double),
+              getSampleRate(channelECG),
+              0);
+
+    findHeartRate((double *)mChannels[channelP].samples.data(),
+              (int *)mChannels[channelP].heartRate.data(),
+              mChannels[channelP].samples.size() / sizeof(double),
+              getSampleRate(channelP),
+              1);
+
+    // ABP макс
+    double *pIn, *pOut;
+    int *pHRate;
+
+    int samplesCount = mChannels[channelABP].samples.size() / sizeof(double);
+
+    pIn = (double *)mChannels[channelABP].samples.data();
+    pOut = (double *)mChannels[channelABP].maximums.data();
+    pHRate = (int *)mChannels[channelABP].heartRate.data();
+
+    findHeartRate(pIn, pHRate, samplesCount, getSampleRate(channelABP), 1);
+
+    for (int sampleIndex = 0; sampleIndex < samplesCount; sampleIndex++, pIn++, pOut++, pHRate++) {
+        if (*pHRate != 0) {
+           *pOut = *pIn;
         }
     }
+    // ABP мин
+    pIn = (double *)mChannels[channelABP].samples.data();
+    pOut = (double *)mChannels[channelABP].minimums.data();
+    pHRate = (int *)mChannels[channelABP].heartRate.data();
+
+    findHeartRate(pIn, pHRate, samplesCount, getSampleRate(channelABP), -1);
+
+    for (int sampleIndex = 0; sampleIndex < samplesCount; sampleIndex++, pIn++, pOut++, pHRate++) {
+        if (*pHRate != 0) {
+           *pOut = *pIn;
+        }
+    }
+
+    mChannels[channelABP].heartRate.fill(0);
 
     findTimeLag((int *)mChannels[channelECG].heartRate.data(),
                 mChannels[channelECG].heartRate.size() / sizeof(int),
@@ -132,6 +172,8 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
 
             double * pData = (double *) mChannels[channel].samples.data();
             int * pPeaks = (int *) mChannels[channel].heartRate.data();
+            double * pMins = (double *) mChannels[channel].minimums.data();
+            double * pMaxs = (double *) mChannels[channel].maximums.data();
             double * pTimeLag = (double *) mChannels[channel].timeLag.data();
             qint32 samplesCountAll = mChannels[channel].samples.size() / sizeof(double);
             qint32 samplesViewPort = qreal(screenWidth) * getSampleRate(channel) * magicTimeScaler / mSweepFactor;
@@ -162,8 +204,10 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                 qint32 yMin = screenHeight;
                 double * pCurrentData = pData + startSampleIndex;
                 int * pPeak = pPeaks + startSampleIndex;
+                double * pMin = pMins + startSampleIndex;
+                double * pMax = pMaxs + startSampleIndex;
                 double * pLag = pTimeLag + startSampleIndex;
-                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++, pCurrentData++, pPeak++, pLag++)
+                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++, pCurrentData++, pPeak++, pLag++, pMax++, pMin++)
                 {
                     qint32 x = screenWidth * (sampleIndex - startSampleIndex) / samplesViewPort;
                     if (x < 0) x = 0;
@@ -200,16 +244,28 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                         if (*pLag > 0) {
                             text = text + "/" + QString::number(int((*pLag)*1000.0)) + "ms";
                         }
-                        painter.drawEllipse(x, startY, 4, 4);
+                        painter.drawEllipse(x-1, y-1, 4, 4);
                         painter.drawText(x, startY, text);
+                    }
+                    if (*pMax != 0) {
+                        QString text = "h=" + QString::number(*pMax);
+                        painter.drawEllipse(x-1, y-1, 4, 4);
+                        painter.drawText(x, y-5, text);
+                    }
+                    if (*pMin != 0) {
+                        QString text = "l=" + QString::number(*pMin);
+                        painter.drawEllipse(x-1, y-1, 4, 4);
+                        painter.drawText(x, y+10, text);
                     }
                 }
                 painter.drawPolyline(points, pointCount);
             } else {
                 QPoint * points = new QPoint[endSampleIndex - startSampleIndex];
                 int * pPeak = pPeaks + startSampleIndex;
+                double * pMin = pMins + startSampleIndex;
+                double * pMax = pMaxs + startSampleIndex;
                 double * pLag = pTimeLag + startSampleIndex;
-                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++, pPeak++, pLag++)
+                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++, pPeak++, pLag++, pMin++, pMax++)
                 {
                     qint32 x = (qint32)((qreal)screenWidth * (qreal)(sampleIndex - startSampleIndex) / (qreal)samplesViewPort);
                     if (x < 0) x = 0;
@@ -227,8 +283,18 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                         if (*pLag > 0) {
                             text = text + "/" + QString::number(int((*pLag)*1000.0)) + "ms";
                         }
-                        painter.drawEllipse(x, startY, 4, 4);
+                        painter.drawEllipse(x-1, y-1, 4, 4);
                         painter.drawText(x, startY, text);
+                    }
+                    if (*pMax != 0) {
+                        QString text = "h=" + QString::number(*pMax);
+                        painter.drawEllipse(x-1, y-1, 4, 4);
+                        painter.drawText(x, y-5, text);
+                    }
+                    if (*pMin != 0) {
+                        QString text = "l=" + QString::number(*pMin);
+                        painter.drawEllipse(x-1, y-1, 4, 4);
+                        painter.drawText(x, y+5, text);
                     }
                 }
                 painter.drawPolyline(points, endSampleIndex - startSampleIndex);
@@ -287,7 +353,7 @@ void GraphicAreaWidget::findHeartRate(double *pInSamples, int *pHeartRate, int s
         }
     }
     // поиск максимумов
-    double barrier = 0.6;
+    double barrier = 0.75;
     int peakStartedIndex = 0;
     int maxIndex = 0;
     int prevMaxIndex = -1;

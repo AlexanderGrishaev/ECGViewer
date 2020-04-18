@@ -217,9 +217,19 @@
          <widget class="QComboBox" name="comboBox_pl"/>
         </item>
         <item>
+         <widget class="QLabel" name="label_5">
+          <property name="text">
+           <string>ABP channel</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="comboBox_abp"/>
+        </item>
+        <item>
          <widget class="QPushButton" name="pushButton">
           <property name="text">
-           <string>Heart rate</string>
+           <string>Run!</string>
           </property>
          </widget>
         </item>

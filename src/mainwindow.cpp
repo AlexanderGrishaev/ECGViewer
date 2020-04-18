@@ -127,6 +127,7 @@ void MainWindow::on_actionLoad_triggered() {
 
         ui->comboBox_ecg->addItem(text);
         ui->comboBox_pl->addItem(text);
+        ui->comboBox_abp->addItem(text);
 
         unsigned long long samplesCount = mEDFHeader.signalparam[channel].smp_in_file;
 
@@ -176,5 +177,5 @@ void MainWindow::on_horizontalScrollBar_valueChanged(int value)
 
 void MainWindow::on_pushButton_clicked()
 {
-    mpGraphicAreaWidget->calc(ui->comboBox_ecg->currentIndex(), ui->comboBox_pl->currentIndex());
+    mpGraphicAreaWidget->calc(ui->comboBox_ecg->currentIndex(), ui->comboBox_pl->currentIndex(), ui->comboBox_abp->currentIndex());
 }

@@ -16,6 +16,10 @@ struct ChannelParams {
     QByteArray heartRate;
     // Отставание по времени (только в канале плетизмограммы), с (double)
     QByteArray timeLag;
+    //
+    QByteArray maximums;
+    //
+    QByteArray minimums;
 
     // масштабирующий коэффициент
     qreal scalingFactor;
@@ -49,7 +53,7 @@ public:
     //
     void setScroll(qreal part);
     //
-    void calc(int channelECG, int channelP);
+    void calc(int channelECG, int channelP, int channelABP);
 
 protected:
     // метод для отрисовки содержимого виджета
@@ -83,7 +87,7 @@ private:
     // maxInterval максимальная дистанция между пиками
     // inversion Инвертирование входных данных:
     // -1 инвертирование
-    // 0 автоматический подбор (хорошо работает для картиограммы с ярковыраженными пиками))
+    // 0 автоматический подбор (хорошо работает для кардиограммы с ярковыраженными пиками))
     // 1 без инвертирования
     void findHeartRate(double * pInSamples, int * pHeartRate, int samplesCount, double sampleRate, int inversion);
     // индекс канала кардиограммы
