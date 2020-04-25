@@ -15,11 +15,13 @@ TEMPLATE = app
 SOURCES += main.cpp\
         EDFlib/edflib.c \
         graphicareawidget.cpp \
+        leastsquaremethod.cpp \
         mainwindow.cpp
 
 HEADERS  += mainwindow.h \
     EDFlib/edflib.h \
-    graphicareawidget.h
+    graphicareawidget.h \
+    leastsquaremethod.h
 
 FORMS    += mainwindow.ui
 

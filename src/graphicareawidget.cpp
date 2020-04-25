@@ -1,4 +1,5 @@
 #include "graphicareawidget.h"
+#include "leastsquaremethod.h"
 #include <QPainter>
 
 GraphicAreaWidget::GraphicAreaWidget(QWidget *parent) : QWidget(parent) {
@@ -40,15 +41,13 @@ void GraphicAreaWidget::setData(qint32 channelIndex, QByteArray doubleSamples)
             }
         }
         mChannels[channelIndex].heartRate.resize(sizeof(int) * samplesCountAll);
-        mChannels[channelIndex].heartRate.fill(0);
-
         mChannels[channelIndex].timeLag.resize(sizeof(double) * samplesCountAll);
-        mChannels[channelIndex].timeLag.fill(0);
-
         mChannels[channelIndex].minimums.resize(sizeof(double) * samplesCountAll);
-        mChannels[channelIndex].minimums.fill(0);
-
         mChannels[channelIndex].maximums.resize(sizeof(double) * samplesCountAll);
+
+        mChannels[channelIndex].heartRate.fill(0);
+        mChannels[channelIndex].timeLag.fill(0);
+        mChannels[channelIndex].minimums.fill(0);
         mChannels[channelIndex].maximums.fill(0);
     }
 }
@@ -76,6 +75,13 @@ void GraphicAreaWidget::setScroll(qreal part)
 
 void GraphicAreaWidget::calc(int channelECG, int channelP, int channelABP)
 {
+    for (qint32 channel = 0; channel < qint32(mpEDFHeader->edfsignals); channel++) {
+        mChannels[channel].heartRate.fill(0);
+        mChannels[channel].timeLag.fill(0);
+        mChannels[channel].minimums.fill(0);
+        mChannels[channel].maximums.fill(0);
+    }
+
     findHeartRate((double *)mChannels[channelECG].samples.data(),
               (int *)mChannels[channelECG].heartRate.data(),
               mChannels[channelECG].samples.size() / sizeof(double),
@@ -89,32 +95,50 @@ void GraphicAreaWidget::calc(int channelECG, int channelP, int channelABP)
               1);
 
     // ABP макс
-    double *pIn, *pOut;
-    int *pHRate;
+    double *pIn, *pMax, *pMin, *pInBase, *pMinBase, *pMaxBase;
+    int *pHRate, *pHRateBase;
 
     int samplesCount = mChannels[channelABP].samples.size() / sizeof(double);
 
-    pIn = (double *)mChannels[channelABP].samples.data();
-    pOut = (double *)mChannels[channelABP].maximums.data();
-    pHRate = (int *)mChannels[channelABP].heartRate.data();
+    pInBase = (double *)mChannels[channelABP].samples.data();
+    pMinBase = (double *)mChannels[channelABP].minimums.data();
+    pMaxBase = (double *)mChannels[channelABP].maximums.data();
+    pHRateBase = (int *)mChannels[channelABP].heartRate.data();
+
+    pIn = pInBase;
+    pMax = pMaxBase;
+    pHRate = pHRateBase;
 
     findHeartRate(pIn, pHRate, samplesCount, getSampleRate(channelABP), 1);
 
-    for (int sampleIndex = 0; sampleIndex < samplesCount; sampleIndex++, pIn++, pOut++, pHRate++) {
+    for (int sampleIndex = 0; sampleIndex < samplesCount; sampleIndex++, pIn++, pMax++, pHRate++) {
         if (*pHRate != 0) {
-           *pOut = *pIn;
+           *pMax = *pIn;
         }
     }
     // ABP мин
-    pIn = (double *)mChannels[channelABP].samples.data();
-    pOut = (double *)mChannels[channelABP].minimums.data();
-    pHRate = (int *)mChannels[channelABP].heartRate.data();
+    pIn = pInBase;
+    pMin = pMinBase;
+    pMax = pMaxBase;
+    pHRate = pHRateBase;
 
     findHeartRate(pIn, pHRate, samplesCount, getSampleRate(channelABP), -1);
 
-    for (int sampleIndex = 0; sampleIndex < samplesCount; sampleIndex++, pIn++, pOut++, pHRate++) {
-        if (*pHRate != 0) {
-           *pOut = *pIn;
+    int minIndex = -1;
+    double minValue = 1e10;
+
+    // оставим минимумы только между двумя соседними максимумами)
+    for (int sampleIndex = 0; sampleIndex < samplesCount; sampleIndex++, pIn++, pMin++, pMax++, pHRate++) {
+        if (*pHRate != 0 && minValue > *pIn) {
+           minValue = *pIn;
+           minIndex = sampleIndex;
+        }
+        if (*pMax != 0) {
+            if (minIndex != -1) {
+                pMinBase[minIndex] = pInBase[minIndex];
+            }
+            minIndex = -1;
+            minValue = 1e10;
         }
     }
 
@@ -127,6 +151,54 @@ void GraphicAreaWidget::calc(int channelECG, int channelP, int channelABP)
                 (double *)mChannels[channelP].timeLag.data(),
                 mChannels[channelP].heartRate.size() / sizeof(int),
                 getSampleRate(channelP));
+
+    // массив давлений и задержек
+    mDelayAndPressureList.clear();
+    pMin = pMinBase;
+    pMax = pMaxBase;
+    double * pDelayMs = (double *)mChannels[channelP].timeLag.data();
+
+    LeastSquareMethod lsmLo;
+    LeastSquareMethod lsmHi;
+
+    DelayAndPressure item;
+    memset(&item, 0, sizeof(item));
+    printf("Delay Low High%\n");
+    int plethSampleIndex = 0;
+    int plethSamples = mChannels[channelP].timeLag.size() / sizeof(double);
+    for (int sampleIndex = 0; sampleIndex < samplesCount; sampleIndex++, pMin++, pMax++) {
+
+        if (*pMin != 0) item.minPressureMm = *pMin;
+        if (*pMax != 0) item.maxPressureMm = *pMax;
+
+        while (plethSampleIndex < plethSamples && (double(plethSampleIndex) * getSampleRate(channelABP)) < (double(sampleIndex) * getSampleRate(channelP))) {
+            if (*pDelayMs != 0) item.delayS = *pDelayMs;
+            pDelayMs++;
+            plethSampleIndex++;
+        }
+
+        if (item.delayS != 0) {
+            if (item.maxPressureMm != 0 && item.minPressureMm !=0) {
+                mDelayAndPressureList.append(item);
+                printf("%.4lf %.2lf %.2lf\n", item.delayS, item.minPressureMm, item.maxPressureMm);
+                lsmLo.add(item.delayS, item.minPressureMm);
+                lsmHi.add(item.delayS, item.maxPressureMm);
+                memset(&item, 0, sizeof(item));
+            }
+        }
+    }
+
+    lsmLo.calc();
+    lsmHi.calc();
+
+    mAHi = lsmHi.getA();
+    mBHi = lsmHi.getB();
+
+    mALo = lsmLo.getA();
+    mBLo = lsmLo.getB();
+
+    printf("Lo = %.2lf * T + %.2lf\n", mALo, mBLo);
+    printf("Hi = %.2lf * T + %.2lf\n", mAHi, mBHi);
 
     mRepaint = true;
 }
@@ -153,6 +225,12 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
 
     QBrush brush(Qt::red, Qt::SolidPattern);
     painter.setBrush(brush);
+
+    QString lo = QString::asprintf("lo = %.2lf * t + %.2lf\n", mALo, mBLo);
+    QString hi = QString::asprintf("hi = %.2lf * t + %.2lf\n", mAHi, mBHi);
+
+    painter.drawText(10, 10, lo);
+    painter.drawText(10, 20, hi);
 
     for (qint32 channel = 0; channel < qint32(mpEDFHeader->edfsignals); channel++)
     {
@@ -243,9 +321,11 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                         QString text = QString::number(*pPeak);
                         if (*pLag > 0) {
                             text = text + "/" + QString::number(int((*pLag)*1000.0)) + "ms";
+                            painter.drawText(x, y+20, QString::asprintf("hi = %.2lf", mAHi * (*pLag) + mBHi));
+                            painter.drawText(x, y+30, QString::asprintf("lo = %.2lf", mALo * (*pLag) + mBLo));
                         }
                         painter.drawEllipse(x-1, y-1, 4, 4);
-                        painter.drawText(x, startY, text);
+                        painter.drawText(x, y, text);
                     }
                     if (*pMax != 0) {
                         QString text = "h=" + QString::number(*pMax);
@@ -282,9 +362,12 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                         QString text = QString::number(*pPeak);
                         if (*pLag > 0) {
                             text = text + "/" + QString::number(int((*pLag)*1000.0)) + "ms";
+                            painter.drawText(x, y+20, QString::asprintf("hi = %.2lf", mAHi * (*pLag) + mBHi));
+                            painter.drawText(x, y+30, QString::asprintf("lo = %.2lf", mALo * (*pLag) + mBLo));
                         }
                         painter.drawEllipse(x-1, y-1, 4, 4);
-                        painter.drawText(x, startY, text);
+                        painter.drawText(x, y, text);
+
                     }
                     if (*pMax != 0) {
                         QString text = "h=" + QString::number(*pMax);
@@ -388,7 +471,7 @@ void GraphicAreaWidget::findHeartRate(double *pInSamples, int *pHeartRate, int s
                     }
                     prevMaxIndex = maxIndex;
 
-                    printf("Maximum index = %d, HR = %d\n", maxIndex, *(pHeartRate + maxIndex));
+//                    printf("Maximum index = %d, HR = %d\n", maxIndex, *(pHeartRate + maxIndex));
                 }
             }
         }
@@ -418,7 +501,7 @@ void GraphicAreaWidget::findTimeLag(int * pHeartRateECG, int samplesCountECG, do
                 double timeP = double(indexP) / sampleRateP;
                 if (timeP - timeECG > 0 && timeP - timeECG < maxTimeLag && *(pHeartRateP + indexP) > 0) {
                     *(pTimeLag + indexP) = timeP - timeECG;
-                    printf("Time lag = %lf\n", timeP - timeECG);
+//                    printf("Time lag = %lf\n", timeP - timeECG);
                     break;
                 }
             }

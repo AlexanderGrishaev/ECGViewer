@@ -36,6 +36,16 @@ struct ChannelParams {
     }
 };
 
+// массив давлений и задержек для каждого максимума ЭКГ
+struct DelayAndPressure {
+    // задержка в секундах
+    double delayS;
+    // нижнее давление, ммрс
+    double minPressureMm;
+    // верхнее давление, ммрс
+    double maxPressureMm;
+};
+
 class GraphicAreaWidget : public QWidget
 {
     Q_OBJECT
@@ -69,6 +79,14 @@ signals:
 public slots:
 
 private:
+    //
+    double mAHi;
+    double mALo;
+    double mBHi;
+    double mBLo;
+
+    //
+    QList<DelayAndPressure> mDelayAndPressureList;
     // заголовок файла EDF (если неопределен или ошибка открытия файла, то nullptr)
     edf_hdr_struct * mpEDFHeader;
     // параметры и данные каналов

@@ -129,6 +129,14 @@ void MainWindow::on_actionLoad_triggered() {
         ui->comboBox_pl->addItem(text);
         ui->comboBox_abp->addItem(text);
 
+        if (text.contains("pl", Qt::CaseInsensitive)) {
+             ui->comboBox_pl->setCurrentIndex(channel);
+        }
+
+        if (text.contains("abp", Qt::CaseInsensitive)) {
+             ui->comboBox_abp->setCurrentIndex(channel);
+        }
+
         unsigned long long samplesCount = mEDFHeader.signalparam[channel].smp_in_file;
 
         pDoubleBuffer = (double *)malloc(samplesCount * sizeof(double));
