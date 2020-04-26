@@ -30,12 +30,19 @@ private slots:
 
     void on_pushButton_clicked();
 
+    void on_horizontalSlider_sliderMoved(int position);
+
+    void on_horizontalSlider_2_sliderMoved(int position);
+
 private:
     Ui::MainWindow *ui;
     QString mFileName;
     GraphicAreaWidget * mpGraphicAreaWidget;
 
     edf_hdr_struct mEDFHeader;
+
+    int percent0;
+    int percent1;
 
 };
 

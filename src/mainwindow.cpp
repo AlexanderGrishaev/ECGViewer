@@ -5,6 +5,8 @@
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow) {
     ui->setupUi(this);
     ui->statusBar->showMessage(tr("Ready"));
+    on_horizontalSlider_sliderMoved(0);
+    on_horizontalSlider_2_sliderMoved(50);
 
     mpGraphicAreaWidget = new GraphicAreaWidget(this);
     ui->horizontalLayoutPaint->addWidget(mpGraphicAreaWidget);
@@ -185,5 +187,24 @@ void MainWindow::on_horizontalScrollBar_valueChanged(int value)
 
 void MainWindow::on_pushButton_clicked()
 {
+    mpGraphicAreaWidget->setPressureCalcPercent(percent0, percent1);
     mpGraphicAreaWidget->calc(ui->comboBox_ecg->currentIndex(), ui->comboBox_pl->currentIndex(), ui->comboBox_abp->currentIndex());
+}
+
+void MainWindow::on_horizontalSlider_sliderMoved(int position)
+{
+    percent0 = position;
+    ui->label_slider->setText(QString::asprintf("%2d%% - %2d%%", percent0, percent1));
+    if (percent1 <= percent0) {
+        percent1 = percent0+1;
+    }
+}
+
+void MainWindow::on_horizontalSlider_2_sliderMoved(int position)
+{
+    percent1 = position;
+    ui->label_slider->setText(QString::asprintf("%2d%% - %2d%%", percent0, percent1));
+    if (percent1 <= percent0) {
+        percent0 = percent1-1;
+    }
 }

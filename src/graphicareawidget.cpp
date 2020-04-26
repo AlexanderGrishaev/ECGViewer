@@ -1,6 +1,7 @@
 #include "graphicareawidget.h"
 #include "leastsquaremethod.h"
 #include <QPainter>
+#include <math.h>
 
 GraphicAreaWidget::GraphicAreaWidget(QWidget *parent) : QWidget(parent) {
     mScalingFactor = 1000.0;
@@ -12,6 +13,10 @@ GraphicAreaWidget::GraphicAreaWidget(QWidget *parent) : QWidget(parent) {
     mChannelECG = 1;
     mChannelPlethism = 0;
     startTimer(50);
+
+    mBeginPercent = 0;
+    mEndPercent = 50;
+    mN = 0;
 }
 
 void GraphicAreaWidget::setEDFHeader(edf_hdr_struct *pEDFHeader) {
@@ -44,11 +49,15 @@ void GraphicAreaWidget::setData(qint32 channelIndex, QByteArray doubleSamples)
         mChannels[channelIndex].timeLag.resize(sizeof(double) * samplesCountAll);
         mChannels[channelIndex].minimums.resize(sizeof(double) * samplesCountAll);
         mChannels[channelIndex].maximums.resize(sizeof(double) * samplesCountAll);
+        mChannels[channelIndex].minimumsCalculated.resize(sizeof(double) * samplesCountAll);
+        mChannels[channelIndex].maximumsCalculated.resize(sizeof(double) * samplesCountAll);
 
         mChannels[channelIndex].heartRate.fill(0);
         mChannels[channelIndex].timeLag.fill(0);
         mChannels[channelIndex].minimums.fill(0);
         mChannels[channelIndex].maximums.fill(0);
+        mChannels[channelIndex].minimumsCalculated.fill(0);
+        mChannels[channelIndex].maximumsCalculated.fill(0);
     }
 }
 
@@ -80,6 +89,8 @@ void GraphicAreaWidget::calc(int channelECG, int channelP, int channelABP)
         mChannels[channel].timeLag.fill(0);
         mChannels[channel].minimums.fill(0);
         mChannels[channel].maximums.fill(0);
+        mChannels[channel].minimumsCalculated.fill(0);
+        mChannels[channel].maximumsCalculated.fill(0);
     }
 
     findHeartRate((double *)mChannels[channelECG].samples.data(),
@@ -124,8 +135,8 @@ void GraphicAreaWidget::calc(int channelECG, int channelP, int channelABP)
 
     findHeartRate(pIn, pHRate, samplesCount, getSampleRate(channelABP), -1);
 
-    int minIndex = -1;
-    double minValue = 1e10;
+    int minIndex = -1, maxIndex;
+    double minValue = 1e10, maxValue;
 
     // оставим минимумы только между двумя соседними максимумами)
     for (int sampleIndex = 0; sampleIndex < samplesCount; sampleIndex++, pIn++, pMin++, pMax++, pHRate++) {
@@ -168,6 +179,9 @@ void GraphicAreaWidget::calc(int channelECG, int channelP, int channelABP)
     int plethSamples = mChannels[channelP].timeLag.size() / sizeof(double);
     for (int sampleIndex = 0; sampleIndex < samplesCount; sampleIndex++, pMin++, pMax++) {
 
+        if (sampleIndex < mBeginPercent * samplesCount / 100) continue;
+        if (sampleIndex > mEndPercent * samplesCount / 100) continue;
+
         if (*pMin != 0) item.minPressureMm = *pMin;
         if (*pMax != 0) item.maxPressureMm = *pMax;
 
@@ -197,10 +211,57 @@ void GraphicAreaWidget::calc(int channelECG, int channelP, int channelABP)
     mALo = lsmLo.getA();
     mBLo = lsmLo.getB();
 
+    mN = lsmLo.getN();
+
     printf("Lo = %.2lf * T + %.2lf\n", mALo, mBLo);
     printf("Hi = %.2lf * T + %.2lf\n", mAHi, mBHi);
 
+    double * pMinCalculated = (double *)mChannels[channelABP].minimumsCalculated.data();
+    double * pMaxCalculated = (double *)mChannels[channelABP].maximumsCalculated.data();
+
+    pMin = pMinBase;
+    pMax = pMaxBase;
+    pDelayMs = (double *)mChannels[channelP].timeLag.data();
+    plethSampleIndex = 0;
+    minIndex = 0;
+    maxIndex = 0;
+    double delay = 0;
+    for (int sampleIndex = 0; sampleIndex < samplesCount; sampleIndex++, pMin++, pMax++) {
+        if (*pMin != 0) {
+            minIndex = sampleIndex;
+        }
+        if (*pMax != 0) {
+            maxIndex = sampleIndex;
+        }
+
+        while (plethSampleIndex < plethSamples && (double(plethSampleIndex) * getSampleRate(channelABP)) < (double(sampleIndex) * getSampleRate(channelP))) {
+            if (*pDelayMs != 0) delay = *pDelayMs;
+            pDelayMs++;
+            plethSampleIndex++;
+        }
+
+        if (delay != 0) {
+            if (minIndex != 0 && maxIndex !=0) {
+                minValue = delay * mALo + mBLo;
+                maxValue = delay * mAHi + mBHi;
+
+                pMinCalculated[minIndex] = minValue;
+                pMaxCalculated[maxIndex] = maxValue;
+
+                delay = 0;
+                maxIndex = 0;
+                minIndex = 0;
+            }
+        }
+    }
+
     mRepaint = true;
+}
+
+void GraphicAreaWidget::setPressureCalcPercent(int beginPercent, int endPercent)
+{
+    mBeginPercent = beginPercent;
+    mEndPercent = endPercent;
 }
 
 void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
@@ -228,9 +289,11 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
 
     QString lo = QString::asprintf("lo = %.2lf * t + %.2lf\n", mALo, mBLo);
     QString hi = QString::asprintf("hi = %.2lf * t + %.2lf\n", mAHi, mBHi);
+    QString n = QString::asprintf("N = %d\n", mN);
 
     painter.drawText(10, 10, lo);
     painter.drawText(10, 20, hi);
+    painter.drawText(10, 30, n);
 
     for (qint32 channel = 0; channel < qint32(mpEDFHeader->edfsignals); channel++)
     {
@@ -252,6 +315,8 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
             int * pPeaks = (int *) mChannels[channel].heartRate.data();
             double * pMins = (double *) mChannels[channel].minimums.data();
             double * pMaxs = (double *) mChannels[channel].maximums.data();
+            double * pMinsCalc = (double *) mChannels[channel].minimumsCalculated.data();
+            double * pMaxsCalc = (double *) mChannels[channel].maximumsCalculated.data();
             double * pTimeLag = (double *) mChannels[channel].timeLag.data();
             qint32 samplesCountAll = mChannels[channel].samples.size() / sizeof(double);
             qint32 samplesViewPort = qreal(screenWidth) * getSampleRate(channel) * magicTimeScaler / mSweepFactor;
@@ -284,8 +349,10 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                 int * pPeak = pPeaks + startSampleIndex;
                 double * pMin = pMins + startSampleIndex;
                 double * pMax = pMaxs + startSampleIndex;
+                double * pMinCalc = pMinsCalc + startSampleIndex;
+                double * pMaxCalc = pMaxsCalc + startSampleIndex;
                 double * pLag = pTimeLag + startSampleIndex;
-                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++, pCurrentData++, pPeak++, pLag++, pMax++, pMin++)
+                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++, pCurrentData++, pPeak++, pLag++, pMax++, pMin++, pMaxCalc++, pMinCalc++)
                 {
                     qint32 x = screenWidth * (sampleIndex - startSampleIndex) / samplesViewPort;
                     if (x < 0) x = 0;
@@ -328,14 +395,20 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                         painter.drawText(x, y, text);
                     }
                     if (*pMax != 0) {
-                        QString text = "h=" + QString::number(*pMax);
                         painter.drawEllipse(x-1, y-1, 4, 4);
-                        painter.drawText(x, y-5, text);
+                        QString text = "h=" + QString::number(*pMax);
+                        painter.drawText(x, y-15, text);
+                        if (*pMaxCalc != 0) {
+                            painter.drawText(x, y-5, QString::asprintf("e=%.1lf%%", 100.0 * fabs(*pMax - *pMaxCalc) / *pMax));
+                        }
                     }
                     if (*pMin != 0) {
-                        QString text = "l=" + QString::number(*pMin);
                         painter.drawEllipse(x-1, y-1, 4, 4);
+                        QString text = "l=" + QString::number(*pMin);
                         painter.drawText(x, y+10, text);
+                        if (*pMinCalc != 0) {
+                            painter.drawText(x, y+20, QString::asprintf("e=%.1lf%%", 100.0 * fabs(*pMin - *pMinCalc) / *pMin));
+                        }
                     }
                 }
                 painter.drawPolyline(points, pointCount);
@@ -344,8 +417,10 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                 int * pPeak = pPeaks + startSampleIndex;
                 double * pMin = pMins + startSampleIndex;
                 double * pMax = pMaxs + startSampleIndex;
+                double * pMinCalc = pMinsCalc + startSampleIndex;
+                double * pMaxCalc = pMaxsCalc + startSampleIndex;
                 double * pLag = pTimeLag + startSampleIndex;
-                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++, pPeak++, pLag++, pMin++, pMax++)
+                for (qint32 sampleIndex = startSampleIndex; sampleIndex < endSampleIndex; sampleIndex++, pPeak++, pLag++, pMin++, pMax++, pMinCalc++, pMaxCalc++)
                 {
                     qint32 x = (qint32)((qreal)screenWidth * (qreal)(sampleIndex - startSampleIndex) / (qreal)samplesViewPort);
                     if (x < 0) x = 0;
@@ -370,14 +445,20 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
 
                     }
                     if (*pMax != 0) {
-                        QString text = "h=" + QString::number(*pMax);
                         painter.drawEllipse(x-1, y-1, 4, 4);
-                        painter.drawText(x, y-5, text);
+                        QString text = "h=" + QString::number(*pMax);
+                        painter.drawText(x, y-15, text);
+                        if (*pMaxCalc != 0) {
+                            painter.drawText(x, y-5, QString::asprintf("e=%.1lf%%", 100.0 * fabs(*pMax - *pMaxCalc) / *pMax));
+                        }
                     }
                     if (*pMin != 0) {
-                        QString text = "l=" + QString::number(*pMin);
                         painter.drawEllipse(x-1, y-1, 4, 4);
-                        painter.drawText(x, y+5, text);
+                        QString text = "l=" + QString::number(*pMin);
+                        painter.drawText(x, y+10, text);
+                        if (*pMinCalc != 0) {
+                            painter.drawText(x, y+20, QString::asprintf("e=%.1lf%%", 100.0 * fabs(*pMin - *pMinCalc) / *pMin));
+                        }
                     }
                 }
                 painter.drawPolyline(points, endSampleIndex - startSampleIndex);

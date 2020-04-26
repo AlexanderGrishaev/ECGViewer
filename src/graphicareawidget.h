@@ -20,6 +20,10 @@ struct ChannelParams {
     QByteArray maximums;
     //
     QByteArray minimums;
+    //
+    QByteArray maximumsCalculated;
+    //
+    QByteArray minimumsCalculated;
 
     // масштабирующий коэффициент
     qreal scalingFactor;
@@ -64,6 +68,8 @@ public:
     void setScroll(qreal part);
     //
     void calc(int channelECG, int channelP, int channelABP);
+    //
+    void setPressureCalcPercent(int beginPercent, int endPercent);
 
 protected:
     // метод для отрисовки содержимого виджета
@@ -84,6 +90,12 @@ private:
     double mALo;
     double mBHi;
     double mBLo;
+    int mN;
+
+    //
+    int mBeginPercent;
+    //
+    int mEndPercent;
 
     //
     QList<DelayAndPressure> mDelayAndPressureList;

@@ -11,6 +11,7 @@ public:
     void add(double x, double y);
     double getA();
     double getB();
+    int getN();
 
 private:
     double mA;

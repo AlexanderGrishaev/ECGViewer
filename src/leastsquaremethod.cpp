@@ -42,3 +42,8 @@ double LeastSquareMethod::getB()
 {
     return mB;
 }
+
+int LeastSquareMethod::getN()
+{
+    return mX.size();
+}
