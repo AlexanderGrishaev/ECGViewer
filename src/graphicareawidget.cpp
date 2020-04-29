@@ -97,7 +97,7 @@ void GraphicAreaWidget::calc(int channelECG, int channelP, int channelABP)
               (int *)mChannels[channelECG].heartRate.data(),
               mChannels[channelECG].samples.size() / sizeof(double),
               getSampleRate(channelECG),
-              0);
+              1);
 
     findHeartRate((double *)mChannels[channelP].samples.data(),
               (int *)mChannels[channelP].heartRate.data(),
@@ -241,6 +241,8 @@ void GraphicAreaWidget::calc(int channelECG, int channelP, int channelABP)
         }
 
         if (delay != 0) {
+            // только точки за пределами области, в которой производилась оценка
+            if (sampleIndex < mBeginPercent * samplesCount / 100 || sampleIndex > mEndPercent * samplesCount / 100)
             if (minIndex != 0 && maxIndex !=0) {
                 minValue = delay * mALo + mBLo;
                 maxValue = delay * mAHi + mBHi;
@@ -386,7 +388,8 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                     //
                     if (*pPeak > 0) {
                         QString text = QString::number(*pPeak);
-                        if (*pLag > 0) {
+                        if (*pLag > 0)
+                        if (sampleIndex < mBeginPercent * samplesCountAll / 100 || sampleIndex > mEndPercent * samplesCountAll / 100) {
                             text = text + "/" + QString::number(int((*pLag)*1000.0)) + "ms";
                             painter.drawText(x, y+20, QString::asprintf("hi = %.2lf", mAHi * (*pLag) + mBHi));
                             painter.drawText(x, y+30, QString::asprintf("lo = %.2lf", mALo * (*pLag) + mBLo));
@@ -435,7 +438,8 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                     if (*pPeak > 0) {
                         //
                         QString text = QString::number(*pPeak);
-                        if (*pLag > 0) {
+                        if (*pLag > 0)
+                        if (sampleIndex < mBeginPercent * samplesCountAll / 100 || sampleIndex > mEndPercent * samplesCountAll / 100) {
                             text = text + "/" + QString::number(int((*pLag)*1000.0)) + "ms";
                             painter.drawText(x, y+20, QString::asprintf("hi = %.2lf", mAHi * (*pLag) + mBHi));
                             painter.drawText(x, y+30, QString::asprintf("lo = %.2lf", mALo * (*pLag) + mBLo));
@@ -482,6 +486,7 @@ void GraphicAreaWidget::timerEvent(QTimerEvent *event)
 void GraphicAreaWidget::findHeartRate(double *pInSamples, int *pHeartRate, int samplesCount, double sampleRate, int inversion)
 {
     int maxInterval = int(sampleRate / (MIN_HEART_RATE / 60.));
+    int minInterval = int(sampleRate / (MAX_HEART_RATE / 60.));
     printf("Finding peaks: start\n");
     memset(pHeartRate, 0, sizeof(int) * samplesCount);
     int windowSize = maxInterval;
@@ -517,14 +522,14 @@ void GraphicAreaWidget::findHeartRate(double *pInSamples, int *pHeartRate, int s
         }
     }
     // поиск максимумов
-    double barrier = 0.75;
+    double barrier = 0.8;
     int peakStartedIndex = 0;
     int maxIndex = 0;
-    int prevMaxIndex = -1;
+    int prevMaxIndex = -samplesCount;
     double maxValue = 0.0;
     pNormData = pSamples;
     for (int i = 0; i < samplesCount; i++, pNormData++) {
-        if (*pNormData > barrier) {
+        if (*pNormData > barrier && i - prevMaxIndex > minInterval) {
             *(pHeartRate + i) = 1;
             // пик начался?
             if (i > 0 && *(pHeartRate + i - 1) == 0) {
