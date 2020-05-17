@@ -2,6 +2,8 @@
 #include "leastsquaremethod.h"
 #include <QPainter>
 #include <math.h>
+#include <QMouseEvent>
+#include <QDateTime>
 
 GraphicAreaWidget::GraphicAreaWidget(QWidget *parent) : QWidget(parent) {
     mScalingFactor = 1000.0;
@@ -17,6 +19,9 @@ GraphicAreaWidget::GraphicAreaWidget(QWidget *parent) : QWidget(parent) {
     mBeginPercent = 0;
     mEndPercent = 50;
     mN = 0;
+    mMouseX = 0;
+    mMouseY = 0;
+    setMouseTracking(true);
 }
 
 void GraphicAreaWidget::setEDFHeader(edf_hdr_struct *pEDFHeader) {
@@ -297,6 +302,10 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
     painter.drawText(10, 20, hi);
     painter.drawText(10, 30, n);
 
+    QString mouseChannelName = "";
+    QString mouseTime = "";
+    QString mouseValue = "";
+
     for (qint32 channel = 0; channel < qint32(mpEDFHeader->edfsignals); channel++)
     {
         if (channel == mChannelECG) {
@@ -308,6 +317,13 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
         }
 
         qint32 startY = channelHeight / 2 + channelHeight * channel;
+
+        bool mouseInChannel = mMouseY >= startY - channelHeight/2 && mMouseY < startY + channelHeight/2;
+
+        if (mouseInChannel) {
+            mouseChannelName = mpEDFHeader->signalparam[channel].label;
+        }
+
         if (channel < mChannels.size() && mChannels[channel].samples.size() > 0)
         {
             qreal scale = magicPowerScaler * qreal(mpEDFHeader->signalparam[channel].dig_max - mpEDFHeader->signalparam[channel].dig_min) /
@@ -337,6 +353,22 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
 
             if (endSampleIndex >= samplesCountAll) {
                 endSampleIndex = samplesCountAll - 1;
+            }
+
+            if (mouseInChannel) {
+                // time
+                QDateTime startDateTime(QDate(mpEDFHeader->startdate_year, mpEDFHeader->startdate_month, mpEDFHeader->startdate_day),
+                                    QTime(mpEDFHeader->starttime_hour, mpEDFHeader->starttime_minute, mpEDFHeader->starttime_second));
+                QDateTime correctDateTime = startDateTime.addMSecs(mpEDFHeader->starttime_subsecond / 10000);
+                int mouseSampleIndex = startSampleIndex + samplesViewPort * mMouseX / screenWidth;
+                if (mouseSampleIndex >= samplesCountAll) {
+                    mouseSampleIndex = samplesCountAll - 1;
+                }
+                double shiftMs = 1000.0 * double(mouseSampleIndex) / getSampleRate(channel);
+                QDateTime mouseDateTime = correctDateTime.addMSecs(shiftMs);
+                mouseTime = mouseDateTime.toString("hh:mm:ss.zzz");
+                double value = *(pData + mouseSampleIndex);
+                mouseValue = QString::asprintf("%lf %s", value, mpEDFHeader->signalparam[channel].physdimension);
             }
 
             QPoint * points = nullptr;
@@ -470,10 +502,31 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
             delete[] points;
         }
     }
+
+    if (mouseValue != "" && mouseTime != "") {
+        painter.setPen(Qt::black);
+        painter.setBrush(QBrush(QColor(200,200,255,128), Qt::SolidPattern));
+
+        int mouseX = mMouseX + 10;
+        int mouseY = mMouseY + 10;
+        int mouseHintW = 120;
+        int mouseHintH = 40;
+
+        while (mouseX + mouseHintW > screenWidth) mouseX--;
+        while (mouseY + mouseHintH > screenHeight) mouseY--;
+
+        painter.drawRect(mouseX, mouseY, mouseHintW, mouseHintH);
+
+        painter.drawText(mouseX+5, mouseY+15, "Chanel "+mouseChannelName);
+        painter.drawText(mouseX+5, mouseY+25, "Value " + mouseValue);
+        painter.drawText(mouseX+5, mouseY+35, "Time" + mouseTime);
+    }
 }
 
-void GraphicAreaWidget::mouseMoveEvent(QMouseEvent *pEvent) {
+void GraphicAreaWidget::mouseMoveEvent(QMouseEvent *event) {
     mRepaint = true;
+    mMouseX = event->pos().x();
+    mMouseY = event->pos().y();
 }
 
 void GraphicAreaWidget::timerEvent(QTimerEvent *event)

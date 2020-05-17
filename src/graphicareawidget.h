@@ -98,6 +98,9 @@ private:
     int mEndPercent;
 
     //
+    int mMouseX, mMouseY;
+
+    //
     QList<DelayAndPressure> mDelayAndPressureList;
     // заголовок файла EDF (если неопределен или ошибка открытия файла, то nullptr)
     edf_hdr_struct * mpEDFHeader;
