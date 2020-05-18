@@ -294,13 +294,10 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
     QBrush brush(Qt::red, Qt::SolidPattern);
     painter.setBrush(brush);
 
-    QString lo = QString::asprintf("lo = %.2lf * t + %.2lf\n", mALo, mBLo);
-    QString hi = QString::asprintf("hi = %.2lf * t + %.2lf\n", mAHi, mBHi);
-    QString n = QString::asprintf("N = %d\n", mN);
-
-    painter.drawText(10, 10, lo);
-    painter.drawText(10, 20, hi);
-    painter.drawText(10, 30, n);
+    double pressureLo = 0;
+    double pressureHi = 0;
+    int pressureLoCount = 0;
+    int pressureHiCount = 0;
 
     QString mouseChannelName = "";
     QString mouseTime = "";
@@ -423,8 +420,16 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                         if (*pLag > 0)
                         if (sampleIndex < mBeginPercent * samplesCountAll / 100 || sampleIndex > mEndPercent * samplesCountAll / 100) {
                             text = text + "/" + QString::number(int((*pLag)*1000.0)) + "ms";
-                            painter.drawText(x, y+20, QString::asprintf("hi = %.2lf", mAHi * (*pLag) + mBHi));
-                            painter.drawText(x, y+30, QString::asprintf("lo = %.2lf", mALo * (*pLag) + mBLo));
+                            double pHi = mAHi * (*pLag) + mBHi;
+                            double pLo = mALo * (*pLag) + mBLo;
+                            painter.drawText(x, y+20, QString::asprintf("Hi = %.2lf", pHi));
+                            painter.drawText(x, y+30, QString::asprintf("Lo = %.2lf", pLo));
+
+                            pressureHi += pHi;
+                            pressureHiCount++;
+
+                            pressureLo += pLo;
+                            pressureLoCount++;
                         }
                         painter.drawEllipse(x-1, y-1, 4, 4);
                         painter.drawText(x, y, text);
@@ -473,8 +478,18 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                         if (*pLag > 0)
                         if (sampleIndex < mBeginPercent * samplesCountAll / 100 || sampleIndex > mEndPercent * samplesCountAll / 100) {
                             text = text + "/" + QString::number(int((*pLag)*1000.0)) + "ms";
-                            painter.drawText(x, y+20, QString::asprintf("hi = %.2lf", mAHi * (*pLag) + mBHi));
-                            painter.drawText(x, y+30, QString::asprintf("lo = %.2lf", mALo * (*pLag) + mBLo));
+
+                            double pHi = mAHi * (*pLag) + mBHi;
+                            double pLo = mALo * (*pLag) + mBLo;
+
+                            painter.drawText(x, y+20, QString::asprintf("Hi = %.2lf", pHi));
+                            painter.drawText(x, y+30, QString::asprintf("Lo = %.2lf", pLo));
+
+                            pressureHi += pHi;
+                            pressureHiCount++;
+
+                            pressureLo += pLo;
+                            pressureLoCount++;
                         }
                         painter.drawEllipse(x-1, y-1, 4, 4);
                         painter.drawText(x, y, text);
@@ -503,20 +518,47 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
         }
     }
 
+    painter.setPen(Qt::lightGray);
+    painter.setBrush(QBrush(QColor(220,220,220,128), Qt::SolidPattern));
+    painter.drawRect(0, 0, 140, 60);
+    painter.setPen(Qt::black);
+
+    QString lo = QString::asprintf("Lo = %.2lf * t + %.2lf\n", mALo, mBLo);
+    QString hi = QString::asprintf("Hi = %.2lf * t + %.2lf\n", mAHi, mBHi);
+    QString n = QString::asprintf("N = %d\n", mN);
+
+    painter.drawText(10, 15, lo);
+    painter.drawText(10, 25, hi);
+    painter.drawText(10, 35, n);
+
+    if (pressureLoCount > 0)
+    {
+        pressureLo /= double(pressureLoCount);
+        QString textLo = QString::asprintf("Mean Lo = %.1lf", pressureLo);
+        painter.drawText(10, 45, textLo);
+    }
+
+    if (pressureHiCount > 0)
+    {
+        pressureHi /= double(pressureHiCount);
+        QString textHi = QString::asprintf("Mean Hi = %.1lf", pressureHi);
+        painter.drawText(10, 55, textHi);
+    }
+
     if (mouseValue != "" && mouseTime != "") {
-        painter.setPen(Qt::black);
-        painter.setBrush(QBrush(QColor(200,200,255,128), Qt::SolidPattern));
+        painter.setPen(Qt::lightGray);
+        painter.setBrush(QBrush(QColor(220,220,220,128), Qt::SolidPattern));
 
         int mouseX = mMouseX + 10;
         int mouseY = mMouseY + 10;
         int mouseHintW = 120;
         int mouseHintH = 40;
 
-        while (mouseX + mouseHintW > screenWidth) mouseX--;
-        while (mouseY + mouseHintH > screenHeight) mouseY--;
+        while (mouseX + mouseHintW > screenWidth - 1) mouseX--;
+        while (mouseY + mouseHintH > screenHeight - 1) mouseY--;
 
         painter.drawRect(mouseX, mouseY, mouseHintW, mouseHintH);
-
+        painter.setPen(Qt::black);
         painter.drawText(mouseX+5, mouseY+15, "Chanel "+mouseChannelName);
         painter.drawText(mouseX+5, mouseY+25, "Value " + mouseValue);
         painter.drawText(mouseX+5, mouseY+35, "Time" + mouseTime);
