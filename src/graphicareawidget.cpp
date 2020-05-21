@@ -355,6 +355,9 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                 QPen pen;
                 pen.setStyle(Qt::DotLine);
                 pen.setColor(Qt::gray);
+                QFont font = painter.font();
+                font.setPointSize(7);
+                painter.setFont(font);
                 painter.setPen(pen);
 
                 QDateTime startDateTime(QDate(mpEDFHeader->startdate_year, mpEDFHeader->startdate_month, mpEDFHeader->startdate_day),
@@ -363,25 +366,16 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                 double leftMs = 1000.0 * double(startSampleIndex) / getSampleRate(0);
                 QDateTime left = correctedDateTime.addMSecs(qint64(leftMs));
 
-                double pixelsPerSecond = double(screenWidth) * getSampleRate(0) / double(samplesViewPort);
-                int minPixelsPerTick = 60;
+                double pixelsPerSecond = double(screenWidth) * getSampleRate(0) / double(samplesViewPort) / 10.0;
+                int minPixelsPerTick = 50;
                 int interval = 1;
 
-                if (pixelsPerSecond < minPixelsPerTick) {
-                    interval *= 10;
-                    pixelsPerSecond *= 10.;
-                }
-                if (pixelsPerSecond < minPixelsPerTick) {
-                    interval *= 6;
-                    pixelsPerSecond *= 6.;
-                }
-                if (pixelsPerSecond < minPixelsPerTick) {
-                    interval *= 10;
-                    pixelsPerSecond *= 10.;
-                }
-                if (pixelsPerSecond < minPixelsPerTick) {
-                    interval *= 6;
-                    pixelsPerSecond *= 6.;
+                int dividers[4] = {2,3,2,5};
+                int dividerIndex = 2;
+                while (pixelsPerSecond < minPixelsPerTick) {
+                    interval *= dividers[dividerIndex % 4];
+                    pixelsPerSecond *= double(dividers[dividerIndex % 4]);
+                    dividerIndex++;
                 }
 
                 int timePrev = 0;
@@ -389,14 +383,16 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                     double shiftMs = 1000.0 * double(samplesViewPort) * double(x) / double(screenWidth) / getSampleRate(0);
                     QDateTime now = left.addMSecs(qint64(shiftMs));
 
-                    int time = (now.time().msecsSinceStartOfDay() / 1000) / interval;
+                    int time = (now.time().msecsSinceStartOfDay() / 100) / interval;
 
                     if (x > 0 && time != timePrev) {
                         painter.drawLine(x, 0, x, screenHeight);
-                        painter.drawText(x, screenHeight - 5, now.toString("hh:mm:ss"));
+                        painter.drawText(x, screenHeight - 5, now.toString("hh:mm:ss.zzz").left(10));
                     }
                     timePrev = time;
                 }
+                font.setPointSize(8);
+                painter.setFont(font);
                 painter.setPen(Qt::SolidLine);
             }
 
@@ -419,6 +415,34 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
                 } else {
                     mouseValue = QString::asprintf("%lf %s", value, mpEDFHeader->signalparam[channel].physdimension);
                 }
+            }
+
+            if (QString(mpEDFHeader->signalparam[channel].physdimension).contains("V") &&
+                    !QString(mpEDFHeader->signalparam[channel].label).contains("PLET", Qt::CaseInsensitive) &&
+                    !QString(mpEDFHeader->signalparam[channel].label).contains("RESP", Qt::CaseInsensitive))
+            {
+                QPen pen;
+                pen.setStyle(Qt::DotLine);
+                pen.setColor(Qt::gray);
+                painter.setPen(pen);
+                QFont font = painter.font();
+                font.setPointSize(7);
+                painter.setFont(font);
+                int beginY = startY - channelHeight / 2;
+                int endY = beginY + channelHeight;
+                int minRowHeight = 20;
+                for (int row = 0; row <= (endY - beginY) / minRowHeight; row++) {
+                    int y = beginY + row * minRowHeight;
+                    painter.drawLine(0, y, screenWidth, y);
+                    if (y + 10 > endY) break;
+                    double value = meanValue - double(y - startY) / scale;
+                    painter.drawText(5, y+10,  QString::asprintf("%lf", value));
+                }
+                pen.setStyle(Qt::SolidLine);
+                painter.setPen(pen);
+                painter.drawLine(0, endY, screenWidth, endY);
+                font.setPointSize(8);
+                painter.setFont(font);
             }
 
             if (channel == mChannelECG) {
@@ -584,16 +608,16 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
 
     painter.setPen(Qt::lightGray);
     painter.setBrush(QBrush(QColor(220,220,220,128), Qt::SolidPattern));
-    painter.drawRect(0, 0, 250, 120);
+    painter.drawRect(screenWidth-250, 0, screenWidth, 120);
     painter.setPen(Qt::black);
 
     QString lo = QString::asprintf("Lo = %.2lf * t + %.2lf\n", mALo, mBLo);
     QString hi = QString::asprintf("Hi = %.2lf * t + %.2lf\n", mAHi, mBHi);
     QString n = QString::asprintf("N = %d\n", mN);
 
-    painter.drawText(10, 25, lo);
-    painter.drawText(10, 45, hi);
-    painter.drawText(10, 65, n);
+    painter.drawText(screenWidth - 250 + 10, 25, lo);
+    painter.drawText(screenWidth - 250 + 10, 45, hi);
+    painter.drawText(screenWidth - 250 + 10, 65, n);
 
     if (pressureLoCount > 0)
     {
@@ -601,7 +625,7 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
         pressureLoCalc /= double(pressureLoCount);
         double pressureError = 100.0 * fabs(pressureLo - pressureLoCalc) / pressureLo;
         QString textLo = QString::asprintf("Mean Lo = %.1lf, e=%.1lf%%", pressureLoCalc, pressureError);
-        painter.drawText(10, 85, textLo);
+        painter.drawText(screenWidth - 250 + 10, 85, textLo);
     }
 
     if (pressureHiCount > 0)
@@ -610,7 +634,7 @@ void GraphicAreaWidget::paintEvent(QPaintEvent *event) {
         pressureHiCalc /= double(pressureHiCount);
         double pressureError = 100.0 * fabs(pressureHi - pressureHiCalc) / pressureLo;
         QString textHi = QString::asprintf("Mean Hi = %.1lf, e=%.1lf%%", pressureHiCalc, pressureError);
-        painter.drawText(10, 105, textHi);
+        painter.drawText(screenWidth - 250 + 10, 105, textHi);
     }
 
     if (mouseValue != "" && mouseTime != "") {
